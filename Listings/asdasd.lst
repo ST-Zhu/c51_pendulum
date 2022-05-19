@@ -1,0 +1,343 @@
+C51 COMPILER V9.56.0.0   ASDASD                                                            10/07/2018 20:23:04 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE ASDASD
+OBJECT MODULE PLACED IN .\Objects\asdasd.obj
+COMPILER INVOKED BY: C:\Program Files\Keil_v5\C51\BIN\C51.EXE asdasd.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT
+                    -(.\Listings\asdasd.lst) OBJECT(.\Objects\asdasd.obj)
+
+line level    source
+
+   1          #include <reg52.h>
+   2          #include "intrins.h"
+   3          #define uint unsigned int
+   4          #define uchar unsigned char
+   5          #define ulint long int
+   6          #define CYCLE 20                                //调整一次周期（PWM周期）
+   7          
+   8          sfr ADC_CONTR=0xBC;
+   9          sfr ADC_RES=0xBD;
+  10          sfr ADC_LOW2=0xBE;
+  11          sfr P1ASF=0x9D;
+  12          #define ADC_POWER 0x80
+  13          #define ADC_FLAG 0x10
+  14          #define ADC_START 0x08
+  15          #define ADC_SPEEDLL 0x00
+  16          #define ADC_SPEEDL 0x20
+  17          #define ADC_SPEEDH 0x40
+  18          #define ADC_SPEEDHH 0x60
+  19          
+  20          uchar count;                                    //计数数
+  21          uchar PWM;                                              //所占空间比
+  22          
+  23          sbit KEY1=P0^0;
+  24          sbit KEY2=P0^1;
+  25          sbit KEY3=P0^2;
+  26          sbit ENA=P2^0;
+  27          sbit IN1=P2^1;
+  28          sbit IN2=P2^2;
+  29          sbit Angle=P1^0;
+  30          
+  31          struct PID_Value
+  32          {
+  33              ulint liEkVal[3];
+  34              uchar uEkFlag[3];
+  35              float uKP_Coe;
+  36              float uKI_Coe;
+  37              float uKD_Coe;
+  38              uint iPriVal;
+  39              uint iSetVal;
+  40              uint iCurVal;
+  41          }PID;
+  42          
+  43          void InitUart();
+  44          void InitADC();
+  45          void SendData(uchar dat);
+  46          uchar GetADCResult(uchar ch);
+  47          void Delay_ADC(uint n);
+  48          void ShowResult(uchar ch);
+  49          void delay(uint z);
+  50          
+  51          void ShowResult(uchar ch)
+  52          {
+  53   1              SendData(GetADCResult(ch));
+  54   1      }
+C51 COMPILER V9.56.0.0   ASDASD                                                            10/07/2018 20:23:04 PAGE 2   
+
+  55          
+  56          uchar GetADCResult(uchar ch)
+  57          {
+  58   1              ADC_CONTR=ADC_POWER|ADC_SPEEDLL|ch|ADC_START;
+  59   1              _nop_();
+  60   1              _nop_();
+  61   1              _nop_();
+  62   1              _nop_();
+  63   1              while(!(ADC_CONTR&ADC_FLAG));
+  64   1              ADC_CONTR&=~ADC_FLAG;
+  65   1              
+  66   1              return ADC_RES;
+  67   1      }
+  68          
+  69          void InitUart()
+  70          {
+  71   1              SCON=0x5a;
+  72   1              TMOD|=0x20;
+  73   1              TH1=0xfd;
+  74   1              TL1=0xfd;
+  75   1              TR1=1;
+  76   1      }
+  77          
+  78          void InitADC()
+  79          {
+  80   1              P1ASF=0x1c;
+  81   1              Angle=1;
+  82   1              ADC_RES=0;
+  83   1              ADC_CONTR=ADC_POWER|ADC_SPEEDLL;
+  84   1              Delay_ADC(2);
+  85   1      }
+  86          
+  87          void SendData(uchar dat)
+  88          {
+  89   1              while(!TI);
+  90   1              TI=0;
+  91   1              SBUF=dat;
+  92   1      }
+  93          
+  94          void Delay_ADC(uint n)
+  95          {
+  96   1              uint x;
+  97   1              while(n--)
+  98   1              {
+  99   2                      x=5000;
+ 100   2                      while(x--);
+ 101   2              }
+ 102   1      }
+ 103          
+ 104          void delay(uint z)
+ 105          {
+ 106   1              uint x,y;
+ 107   1              for(x=z;x>0;x--)
+ 108   1                      for(y=1000;y>0;y--);
+ 109   1      }
+ 110          
+ 111          void PID_Operation(uchar BIG,uchar LITTLE)//PID运算
+ 112          {
+ 113   1          ulint Temp[3] = {0};
+ 114   1          ulint PostSum = 0;
+ 115   1          ulint NegSum = 0;
+ 116   1                      
+C51 COMPILER V9.56.0.0   ASDASD                                                            10/07/2018 20:23:04 PAGE 3   
+
+ 117   1              if(BIG - LITTLE > 20)
+ 118   1                  PID.iPriVal = CYCLE;
+ 119   1              else
+ 120   1              {
+ 121   2                  Temp[0] = BIG - LITTLE;
+ 122   2                  PID.uEkFlag[1] = 0;
+ 123   2                  PID.liEkVal[2] = PID.liEkVal[1];
+ 124   2                  PID.liEkVal[1] = PID.liEkVal[0];
+ 125   2                  PID.liEkVal[0] = Temp[0];
+ 126   2                                              
+ 127   2                  if(PID.liEkVal[0] > PID.liEkVal[1])
+ 128   2                  {
+ 129   3                      Temp[0] = PID.liEkVal[0] - PID.liEkVal[1];
+ 130   3                      PID.uEkFlag[0] = 0;
+ 131   3                  }                                       
+ 132   2                  else
+ 133   2                  {
+ 134   3                      Temp[0] = PID.liEkVal[1] - PID.liEkVal[0];
+ 135   3                      PID.uEkFlag[0] = 1;
+ 136   3                  }
+ 137   2                                                      
+ 138   2                  Temp[2] = PID.liEkVal[1] * 2;
+ 139   2                  if((PID.liEkVal[0] + PID.liEkVal[2]) > Temp[2])
+ 140   2                  {
+ 141   3                      Temp[2] = (PID.liEkVal[0] + PID.liEkVal[2]) - Temp[2];
+ 142   3                      PID.uEkFlag[2]=0;
+ 143   3                  }                                               
+ 144   2                  else
+ 145   2                  {
+ 146   3                      Temp[2] = Temp[2] - (PID.liEkVal[0] + PID.liEkVal[2]); 
+ 147   3                      PID.uEkFlag[2] = 1;
+ 148   3                  }
+ 149   2                                                      
+ 150   2                  Temp[0] = (ulint)PID.uKP_Coe * Temp[0];
+ 151   2                  Temp[1] = (ulint)PID.uKI_Coe * PID.liEkVal[0];
+ 152   2                  Temp[2] = (ulint)PID.uKD_Coe * Temp[2];
+ 153   2                                                      
+ 154   2                  if(PID.uEkFlag[0] == 0)
+ 155   2                      PostSum += Temp[0];
+ 156   2                  else                                            
+ 157   2                      NegSum += Temp[0];
+ 158   2      
+ 159   2                  if(PID.uEkFlag[1] == 0)     
+ 160   2                      PostSum += Temp[1];
+ 161   2                  else;
+ 162   2      
+ 163   2                  if(PID.uEkFlag[2]==0)
+ 164   2                      PostSum += Temp[2];
+ 165   2                  else
+ 166   2                      NegSum += Temp[2];
+ 167   2                          
+ 168   2                  PostSum += (ulint)PID.iPriVal;
+ 169   2                                                      
+ 170   2                  if(PostSum > NegSum)
+ 171   2                  { 
+ 172   3                      Temp[0] = PostSum - NegSum;
+ 173   3                      if(Temp[0] < CYCLE )
+ 174   3                          PID.iPriVal = (uint)Temp[0];
+ 175   3                      else PID.iPriVal = CYCLE;
+ 176   3                  }
+ 177   2                  else;
+ 178   2              }
+C51 COMPILER V9.56.0.0   ASDASD                                                            10/07/2018 20:23:04 PAGE 4   
+
+ 179   1      }
+ 180          
+ 181          void PID_Output()
+ 182          {
+ 183   1              PID.iCurVal=GetADCResult(0);
+ 184   1              if(PID.iSetVal>=PID.iCurVal)//正转
+ 185   1              {
+ 186   2                      PID_Operation(PID.iSetVal,PID.iCurVal);
+ 187   2                      IN1=1;
+ 188   2                      IN2=0;
+ 189   2              }
+ 190   1              if(PID.iSetVal<PID.iCurVal)//反转
+ 191   1              {
+ 192   2                      PID_Operation(PID.iCurVal,PID.iSetVal);
+ 193   2                      IN1=0;
+ 194   2                      IN2=1;
+ 195   2              }
+ 196   1              PWM=PID.iPriVal;
+ 197   1      }
+ 198          
+ 199          void InitCar()
+ 200          {
+ 201   1              ENA=1;
+ 202   1      }
+ 203          
+ 204          void InitPID()//PID参数赋值
+ 205          {
+ 206   1              PID.uKP_Coe=3.6;
+ 207   1              PID.uKI_Coe=1.61;
+ 208   1              PID.uKD_Coe=26.5;
+ 209   1      }
+ 210          
+ 211          void InitTimer0()
+ 212          {
+ 213   1              TMOD|=0x01;
+ 214   1              TH0=(65536-100)/256;
+ 215   1              TL0=(65536-100)%256;
+ 216   1              EA=1;
+ 217   1              ET0=1;
+ 218   1              TR0=1;          //开定时器0
+ 219   1      }
+ 220          
+ 221          void Init()
+ 222          {
+ 223   1              InitCar();
+ 224   1              InitPID();
+ 225   1              InitADC();
+ 226   1              InitUart();
+ 227   1              InitTimer0();
+ 228   1      }
+ 229          
+ 230          void main()
+ 231          {
+ 232   1              uchar i;
+ 233   1              Init();
+ 234   1              while(1)
+ 235   1              {                       
+ 236   2                      if(KEY1==0)//功能一
+ 237   2                      {
+ 238   3                              delay(30);
+ 239   3                              if(KEY1==0)
+ 240   3                              {
+C51 COMPILER V9.56.0.0   ASDASD                                                            10/07/2018 20:23:04 PAGE 5   
+
+ 241   4                                      while(KEY1==0); 
+ 242   4                                      while(KEY1!=0)
+ 243   4                                      {
+ 244   5                                              IN1=0;
+ 245   5                                              IN2=1;
+ 246   5                                              PWM=12;
+ 247   5                                              delay(280);
+ 248   5                                              IN1=1;
+ 249   5                                              IN2=0;
+ 250   5                                              PWM=12;
+ 251   5                                              delay(280);
+ 252   5                                      }
+ 253   4                              }
+ 254   3                      }
+ 255   2                      if(KEY2==0)//功能二
+ 256   2                      {
+ 257   3                              delay(30);
+ 258   3                              if(KEY2==0)
+ 259   3                              {
+ 260   4                                      while(KEY2==0);
+ 261   4                                      while(KEY2!=0)
+ 262   4                                      {       
+ 263   5                                              IN1=0;
+ 264   5                                              IN2=1;
+ 265   5                                              PWM=18;
+ 266   5                                              delay(300);
+ 267   5                                              IN1=1;
+ 268   5                                              IN2=0;
+ 269   5                                              PWM=18;
+ 270   5                                              delay(300);
+ 271   5                                      }
+ 272   4                              }
+ 273   3                      }
+ 274   2                      if(KEY3==0)//功能三
+ 275   2                      {
+ 276   3                              delay(30);
+ 277   3                              if(KEY3==0)
+ 278   3                              {
+ 279   4                                      while(KEY3==0);
+ 280   4                                      while(KEY3!=0)
+ 281   4                                      {
+ 282   5                                              PID.iSetVal=0xAB;
+ 283   5                                              PID_Output();
+ 284   5                                      }
+ 285   4                              }
+ 286   3                      }
+ 287   2                      IN1=0;
+ 288   2                      IN2=0;
+ 289   2                      PWM=0;
+ 290   2                      delay(1000);
+ 291   2              }
+ 292   1      }
+*** WARNING C280 IN LINE 232 OF asdasd.c: 'i': unreferenced local variable
+ 293          
+ 294          void timer0() interrupt 1 //定时器0中断（100us）
+ 295          {
+ 296   1              count++;
+ 297   1              if(count<=PWM)
+ 298   1                      ENA=1;
+ 299   1        else
+ 300   1                      ENA=0;
+ 301   1              if(count==CYCLE)
+C51 COMPILER V9.56.0.0   ASDASD                                                            10/07/2018 20:23:04 PAGE 6   
+
+ 302   1              {
+ 303   2                      ENA=~ENA;
+ 304   2                      count=0;
+ 305   2              }
+ 306   1              TH0=(65536-100)/256;
+ 307   1              TL0=(65536-100)%256;
+ 308   1      }//PWM调速
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1094    ----
+   CONSTANT SIZE    =     12    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     35      23
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)
